@@ -68,7 +68,7 @@ function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">F</div><div><strong>ForgeDB</strong><span>Developer Cloud</span></div></div>
-      <div className="workspace"><span className="workspace-dot"/> Demo Workspace <span className="chev">⌄</span></div>
+      <div className="workspace"><span className="workspace-dot"/> Developer Workspace <span className="chev">⌄</span></div>
       <nav>
         <button className="nav active"><span>⌂</span> Overview</button>
         <button className="nav"><span>◈</span> Databases</button>
