@@ -53,13 +53,21 @@ npx wrangler d1 create forgedb-platform-meta
 
 Copy the returned database ID into `wrangler.jsonc`.
 
-3. Apply the migration:
+3. Apply the migrations (this now includes both `projects` and `users`):
 
 ```bash
 npx wrangler d1 migrations apply forgedb-platform-meta --remote
 ```
 
-4. Create Hyperdrive configurations for your existing MySQL and PostgreSQL databases. Examples:
+4. Set the session-signing secret used for login (any long random string - generate one with `head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'`):
+
+```bash
+npx wrangler secret put AUTH_JWT_SECRET
+```
+
+Without this secret, registration and login will fail with "Authentication is not configured on the server yet."
+
+5. Create Hyperdrive configurations for your existing MySQL and PostgreSQL databases. Examples:
 
 ```bash
 npx wrangler hyperdrive create forgedb-mysql --connection-string="mysql://USER:PASSWORD@HOST:3306/DATABASE"
@@ -68,7 +76,7 @@ npx wrangler hyperdrive create forgedb-postgres --connection-string="postgres://
 
 Put the returned IDs into the matching Hyperdrive bindings in `wrangler.jsonc`.
 
-5. Configure Hugging Face Storage Bucket secrets. The endpoint is normally:
+6. Configure Hugging Face Storage Bucket secrets. The endpoint is normally:
 
 ```text
 https://s3.hf.co
@@ -85,9 +93,9 @@ npx wrangler secret put HF_S3_SECRET_ACCESS_KEY
 npx wrangler secret put HF_S3_ACCOUNT_PREFIX
 ```
 
-6. When real database bindings and storage are ready, set `DEMO_MODE` to `false` in your Cloudflare environment.
+7. When real database bindings and storage are ready, set `DEMO_MODE` to `false` in your Cloudflare environment.
 
-7. Deploy:
+8. Deploy:
 
 ```bash
 npm run deploy
@@ -106,7 +114,8 @@ git push -u origin main
 
 ## Security before production
 
-- Add real authentication (OAuth/email) before allowing non-demo users.
+- Email+password accounts are implemented (D1-backed, PBKDF2-hashed passwords, signed HttpOnly session cookies). Every `/api/projects*` and `/api/storage/*` route requires a valid session and is scoped to that user's own data.
+- Still worth adding: password reset, email verification, and rate-limiting login attempts.
 - Add authorization checks for every database and object.
 - Never expose MySQL/PostgreSQL credentials to the browser.
 - Add rate limits and query timeouts.
@@ -121,7 +130,7 @@ git push -u origin main
 Cloudflare deployment, D1, Hyperdrive, Hugging Face bucket, SQL editor, storage uploads.
 
 ### Phase 2 — real accounts
-Authentication, organizations, projects, permissions, API keys.
+Email+password login is done (see above). Still open: organizations, per-project permissions, API keys.
 
 ### Phase 3 — database provisioning
 Provider APIs, tenant isolation, per-database credentials, migrations, backups.

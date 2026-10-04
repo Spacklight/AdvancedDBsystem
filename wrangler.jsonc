@@ -8,6 +8,13 @@
   "directory": "./dist",
     "not_found_handling": "single-page-application"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "forgedb-platform-meta",
+      "database_id": "fc6d3b57-3e62-4455-8cd8-3ed5fd087a68"
+    }
+  ],
   "observability": {
     "enabled": true
   },

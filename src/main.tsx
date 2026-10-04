@@ -4,12 +4,7 @@ import './styles.css';
 
 type Engine = 'mysql' | 'postgresql' | 'sqlite';
 type Project = { id: string; name: string; engine: Engine; status: string; created_at: string; storage_bytes: number };
-
-const demoProjects: Project[] = [
-  { id: 'proj_demo_mysql', name: 'Storefront', engine: 'mysql', status: 'ready', created_at: new Date().toISOString(), storage_bytes: 184000000 },
-  { id: 'proj_demo_pg', name: 'Analytics', engine: 'postgresql', status: 'ready', created_at: new Date().toISOString(), storage_bytes: 92000000 },
-  { id: 'proj_demo_sqlite', name: 'Mobile Cache', engine: 'sqlite', status: 'ready', created_at: new Date().toISOString(), storage_bytes: 38000000 }
-];
+type AuthUser = { id: string; email: string };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, init);
@@ -25,9 +20,68 @@ function formatBytes(bytes: number) {
   return `${n.toFixed(n >= 10 ? 0 : 1)} ${units[i]}`;
 }
 
+function AuthScreen({ onSignedIn }: { onSignedIn: (user: AuthUser) => void }) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(''); setBusy(true);
+    try {
+      const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const data = await api<{ user: AuthUser }>(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      onSignedIn(data.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="auth-screen">
+      <form className="auth-card" onSubmit={submit}>
+        <div className="brand"><div className="brand-mark">F</div><div><strong>ForgeDB</strong><span>Developer Cloud</span></div></div>
+        <h2>{mode === 'login' ? 'Sign in' : 'Create your account'}</h2>
+        <p className="auth-sub">{mode === 'login' ? 'Welcome back.' : 'Start building in under a minute.'}</p>
+
+        <label>Email
+          <input type="email" required autoFocus value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" />
+        </label>
+        <label>Password
+          <input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+        </label>
+
+        {error && <div className="notice auth-error">{error}</div>}
+
+        <button className="primary auth-submit" type="submit" disabled={busy}>
+          {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+        </button>
+
+        <div className="auth-switch">
+          {mode === 'login' ? (
+            <>Don't have an account? <button type="button" onClick={() => { setMode('register'); setError(''); }}>Create one</button></>
+          ) : (
+            <>Already have an account? <button type="button" onClick={() => { setMode('login'); setError(''); }}>Sign in</button></>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function App() {
-  const [projects, setProjects] = useState<Project[]>(demoProjects);
-  const [selected, setSelected] = useState<Project>(demoProjects[0]);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selected, setSelected] = useState<Project | null>(null);
   const [sql, setSql] = useState('SELECT * FROM users;');
   const [result, setResult] = useState<any>(null);
   const [busy, setBusy] = useState(false);
@@ -38,16 +92,25 @@ function App() {
   const [storage, setStorage] = useState({ bytes: 0, quotaBytes: 10 * 1024 ** 3, configured: false, objects: 0 });
 
   useEffect(() => {
-    api<{ projects: Project[] }>('/api/projects').then(x => { if (x.projects.length) { setProjects(x.projects); setSelected(x.projects[0]); } }).catch(() => {});
-    api<any>('/api/storage/usage').then(setStorage).catch(() => {});
+    api<{ user: AuthUser | null }>('/api/auth/me')
+      .then(x => setUser(x.user))
+      .catch(() => setUser(null))
+      .finally(() => setAuthChecked(true));
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    api<{ projects: Project[] }>('/api/projects').then(x => { setProjects(x.projects); if (x.projects.length) setSelected(x.projects[0]); }).catch(() => {});
+    api<any>('/api/storage/usage').then(setStorage).catch(() => {});
+  }, [user]);
+
   const storagePercent = Math.min(100, (storage.bytes / storage.quotaBytes) * 100);
-  const engineLabel = selected.engine === 'postgresql' ? 'PostgreSQL' : selected.engine === 'mysql' ? 'MySQL' : 'SQLite';
+  const engineLabel = selected?.engine === 'postgresql' ? 'PostgreSQL' : selected?.engine === 'mysql' ? 'MySQL' : 'SQLite';
   const rows = result?.rows || [];
   const columns = useMemo(() => result?.fields?.length ? result.fields : rows[0] ? Object.keys(rows[0]) : [], [result, rows]);
 
   async function runQuery() {
+    if (!selected) return;
     setBusy(true); setNotice('');
     try {
       const data = await api<any>(`/api/projects/${selected.id}/query`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sql }) });
@@ -65,6 +128,15 @@ function App() {
     } catch (e) { setNotice(e instanceof Error ? e.message : 'Could not create project'); }
   }
 
+  async function signOut() {
+    await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    setUser(null);
+    setProjects([]); setSelected(null); setResult(null);
+  }
+
+  if (!authChecked) return <div className="auth-screen"><div className="auth-loading">Loading…</div></div>;
+  if (!user) return <AuthScreen onSignedIn={setUser} />;
+
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">F</div><div><strong>ForgeDB</strong><span>Developer Cloud</span></div></div>
@@ -76,20 +148,20 @@ function App() {
         <button className="nav"><span>◫</span> Storage</button>
         <button className="nav"><span>⚙</span> Settings</button>
       </nav>
-      <div className="side-bottom"><div className="plan"><div className="plan-top"><span>Free plan</span><b>10 GB</b></div><div className="progress"><i style={{width: `${storagePercent}%`}}/></div><small>{formatBytes(storage.bytes)} used</small></div><div className="user-card"><div className="avatar">P</div><div><b>Programer</b><span>Developer account</span></div><span>•••</span></div></div>
+      <div className="side-bottom"><div className="plan"><div className="plan-top"><span>Free plan</span><b>10 GB</b></div><div className="progress"><i style={{width: `${storagePercent}%`}}/></div><small>{formatBytes(storage.bytes)} used</small></div><div className="user-card"><div className="avatar">{user.email[0]?.toUpperCase()}</div><div><b>{user.email}</b><span>Developer account</span></div><button className="icon-btn" title="Sign out" onClick={signOut}>⏻</button></div></div>
     </aside>
 
     <main className="main">
-      <header className="topbar"><div><span className="eyebrow">WORKSPACE / DATABASES</span><h1>Developer Console</h1></div><div className="top-actions"><div className="status"><span/> All systems operational</div><button className="icon-btn">?</button><button className="avatar small">P</button></div></header>
+      <header className="topbar"><div><span className="eyebrow">WORKSPACE / DATABASES</span><h1>Developer Console</h1></div><div className="top-actions"><div className="status"><span/> All systems operational</div><button className="icon-btn">?</button><button className="avatar small">{user.email[0]?.toUpperCase()}</button></div></header>
 
       <section className="hero"><div><div className="pill">✦ Edge-ready database platform</div><h2>Build, query and ship<br/><em>without the plumbing.</em></h2><p>Create MySQL, PostgreSQL and SQLite projects, run SQL in a fast editor, and keep files behind one unified storage API.</p><div className="hero-actions"><button className="primary" onClick={() => setShowCreate(true)}>+ Create database</button><button className="secondary" onClick={() => document.getElementById('sql')?.scrollIntoView({behavior:'smooth'})}>Open SQL editor ↘</button></div></div><div className="hero-art"><div className="orb orb-a"/><div className="orb orb-b"/><div className="terminal"><div className="term-head"><span/><span/><span/><b>query.sql</b></div><pre><code><i>SELECT</i> id, name, email{`\n`}<i>FROM</i> users{`\n`}<i>WHERE</i> status = <u>'active'</u>;</code></pre><div className="term-result">✓ 3 rows <span>18 ms</span></div></div></div></section>
 
-      <section className="stats"><Stat label="Databases" value={projects.length.toString()} detail="Across 3 engines" icon="◈"/><Stat label="Storage" value={formatBytes(storage.bytes)} detail="of 10 GB free quota" icon="◫"/><Stat label="Queries today" value="128" detail="+18% this week" icon="⌘"/><Stat label="API status" value="Healthy" detail="Cloudflare edge" icon="✓"/></section>
+      <section className="stats"><Stat label="Databases" value={projects.length.toString()} detail={`Across ${new Set(projects.map(p => p.engine)).size || 0} engines`} icon="◈"/><Stat label="Storage" value={formatBytes(storage.bytes)} detail="of 10 GB free quota" icon="◫"/><Stat label="Queries today" value={result ? '1+' : '0'} detail="This session" icon="⌘"/><Stat label="API status" value="Healthy" detail="Cloudflare edge" icon="✓"/></section>
 
-      <section className="section-grid"><div className="panel projects"><div className="panel-head"><div><span className="label">YOUR DATABASES</span><h3>Projects</h3></div><button className="small-primary" onClick={() => setShowCreate(true)}>+ New</button></div><div className="project-list">{projects.map(p => <button key={p.id} className={`project ${selected.id === p.id ? 'selected' : ''}`} onClick={() => setSelected(p)}><div className={`engine ${p.engine}`}>{p.engine === 'mysql' ? '◆' : p.engine === 'postgresql' ? '◉' : '▣'}</div><div className="project-info"><b>{p.name}</b><span>{p.engine === 'postgresql' ? 'PostgreSQL' : p.engine === 'mysql' ? 'MySQL' : 'SQLite'} · {formatBytes(p.storage_bytes)}</span></div><span className="ready"><i/> Ready</span><span className="arrow">›</span></button>)}</div></div>
-      <div className="panel storage-panel"><div className="panel-head"><div><span className="label">STORAGE</span><h3>10 GB free quota</h3></div><span className="hf-badge">● Hugging Face</span></div><div className="storage-ring" style={{['--p' as any]: storagePercent}}><div><strong>{formatBytes(storage.bytes)}</strong><span>used</span></div></div><div className="storage-lines"><div><span>Database server data</span><b>314 MB</b></div><div><span>Developer files</span><b>{formatBytes(Math.max(0, storage.bytes - 314000000))}</b></div><div><span>Remaining</span><b>{formatBytes(Math.max(0, storage.quotaBytes - storage.bytes))}</b></div></div><div className="storage-note">Your platform storage adapter keeps provider details behind the API. Provider disclosure should be included in your legal/privacy documentation.</div></div></section>
+      <section className="section-grid"><div className="panel projects"><div className="panel-head"><div><span className="label">YOUR DATABASES</span><h3>Projects</h3></div><button className="small-primary" onClick={() => setShowCreate(true)}>+ New</button></div><div className="project-list">{projects.length === 0 && <div className="empty-result"><div>◈</div><span>No databases yet. Create your first one.</span></div>}{projects.map(p => <button key={p.id} className={`project ${selected?.id === p.id ? 'selected' : ''}`} onClick={() => setSelected(p)}><div className={`engine ${p.engine}`}>{p.engine === 'mysql' ? '◆' : p.engine === 'postgresql' ? '◉' : '▣'}</div><div className="project-info"><b>{p.name}</b><span>{p.engine === 'postgresql' ? 'PostgreSQL' : p.engine === 'mysql' ? 'MySQL' : 'SQLite'} · {formatBytes(p.storage_bytes)}</span></div><span className="ready"><i/> Ready</span><span className="arrow">›</span></button>)}</div></div>
+      <div className="panel storage-panel"><div className="panel-head"><div><span className="label">STORAGE</span><h3>10 GB free quota</h3></div><span className="hf-badge">● Hugging Face</span></div><div className="storage-ring" style={{['--p' as any]: storagePercent}}><div><strong>{formatBytes(storage.bytes)}</strong><span>used</span></div></div><div className="storage-lines"><div><span>Remaining</span><b>{formatBytes(Math.max(0, storage.quotaBytes - storage.bytes))}</b></div><div><span>Objects stored</span><b>{storage.objects}</b></div></div><div className="storage-note">Your platform storage adapter keeps provider details behind the API. Provider disclosure should be included in your legal/privacy documentation.</div></div></section>
 
-      <section id="sql" className="panel sql-panel"><div className="panel-head"><div><span className="label">QUERY WORKBENCH</span><h3>SQL Editor</h3></div><div className="editor-meta"><span className={`engine-dot ${selected.engine}`}/>{engineLabel}<span className="sep">·</span>{selected.name}<button className="secondary compact" onClick={() => setSql('SELECT * FROM users;')}>Reset</button></div></div><div className="editor-wrap"><textarea value={sql} onChange={e => setSql(e.target.value)} spellCheck={false}/><div className="editor-footer"><span>⌘ Enter to run · SQL is executed server-side</span><button className="run" onClick={runQuery} disabled={busy}>{busy ? 'Running…' : '▶ Run query'}</button></div></div>{notice && <div className="notice">{notice}</div>}<div className="results"><div className="results-head"><b>Results</b><span>{result ? `${result.rowCount ?? rows.length} rows · ${result.mode}` : 'Run a query to see results'}</span></div>{result && rows.length > 0 ? <div className="table-scroll"><table><thead><tr>{columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r: any, i: number) => <tr key={i}>{columns.map((c: string) => <td key={c}>{String(r[c] ?? '—')}</td>)}</tr>)}</tbody></table></div> : <div className="empty-result"><div>⌘</div><span>{result ? 'Query completed with no rows.' : 'Your query results will appear here.'}</span></div>}</div></section>
+      <section id="sql" className="panel sql-panel"><div className="panel-head"><div><span className="label">QUERY WORKBENCH</span><h3>SQL Editor</h3></div><div className="editor-meta">{selected ? <><span className={`engine-dot ${selected.engine}`}/>{engineLabel}<span className="sep">·</span>{selected.name}</> : <span>Select or create a database first</span>}<button className="secondary compact" onClick={() => setSql('SELECT * FROM users;')}>Reset</button></div></div><div className="editor-wrap"><textarea value={sql} onChange={e => setSql(e.target.value)} spellCheck={false}/><div className="editor-footer"><span>⌘ Enter to run · SQL is executed server-side</span><button className="run" onClick={runQuery} disabled={busy || !selected}>{busy ? 'Running…' : '▶ Run query'}</button></div></div>{notice && <div className="notice">{notice}</div>}<div className="results"><div className="results-head"><b>Results</b><span>{result ? `${result.rowCount ?? rows.length} rows · ${result.mode}` : 'Run a query to see results'}</span></div>{result && rows.length > 0 ? <div className="table-scroll"><table><thead><tr>{columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((r: any, i: number) => <tr key={i}>{columns.map((c: string) => <td key={c}>{String(r[c] ?? '—')}</td>)}</tr>)}</tbody></table></div> : <div className="empty-result"><div>⌘</div><span>{result ? 'Query completed with no rows.' : 'Your query results will appear here.'}</span></div>}</div></section>
 
       <footer><span>ForgeDB starter</span><span>Cloudflare Workers + Vite + React</span><span>MySQL · PostgreSQL · SQLite · Hugging Face storage adapter</span></footer>
     </main>
