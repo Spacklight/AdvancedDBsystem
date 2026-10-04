@@ -1,11 +1,5 @@
-import type { Env, Engine, Project } from './types';
-import { isDemo } from './utils';
-
-const demoRows = [
-  { id: 1, name: 'Alice', email: 'alice@example.com', status: 'active' },
-  { id: 2, name: 'Brian', email: 'brian@example.com', status: 'active' },
-  { id: 3, name: 'Chisomo', email: 'chisomo@example.com', status: 'invited' }
-];
+import type { Env, Project } from './types';
+import { executeSql } from './sqlite';
 
 export async function runSql(
   env: Env,
@@ -22,31 +16,21 @@ export async function runSql(
     throw new Error('SQL query is too large.');
   }
 
-  /*
-   * Demo mode intentionally does not connect to a real database.
-   * The real database gateway will be connected later.
-   */
-  if (isDemo(env)) {
-    const isSelect = /^select\b/i.test(statement);
+  // Real embedded SQLite WASM engine
+  if (project.engine === 'sqlite') {
+    const result = await executeSql(statement);
 
     return {
-      mode: 'demo',
-      engine: project.engine,
-      rows: isSelect ? demoRows : [],
-      fields: isSelect ? Object.keys(demoRows[0]) : [],
-      rowCount: isSelect ? demoRows.length : 0,
-      message:
-        'Demo mode: SQL execution is simulated. A real external database service will be connected later.'
+      mode: 'sqlite',
+      engine: 'sqlite',
+      ...result
     };
   }
 
-  /*
-   * Production database execution will go through the external
-   * database service rather than Cloudflare D1 or Hyperdrive.
-   */
+  // MySQL/PostgreSQL will use an external database gateway
   if (!env.DATABASE_API_URL) {
     throw new Error(
-      'External database service is not configured.'
+      `${project.engine} database service is not configured.`
     );
   }
 
@@ -62,16 +46,19 @@ async function executeThroughDatabaseService(
   project: Project,
   sql: string
 ) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  if (env.DATABASE_API_KEY) {
+    headers.Authorization = `Bearer ${env.DATABASE_API_KEY}`;
+  }
+
   const response = await fetch(
     `${env.DATABASE_API_URL}/v1/query`,
     {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(env.DATABASE_API_KEY
-          ? { Authorization: `Bearer ${env.DATABASE_API_KEY}` }
-          : {})
-      },
+      headers,
       body: JSON.stringify({
         projectId: project.id,
         engine: project.engine,

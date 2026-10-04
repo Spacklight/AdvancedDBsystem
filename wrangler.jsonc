@@ -4,6 +4,12 @@
   "main": "./worker/index.ts",
   "compatibility_date": "2026-10-02",
   "compatibility_flags": ["nodejs_compat"],
+  "rules": [
+  {
+    "type": "CompiledWasm",
+    "globs": ["worker/wasm/*.wasm"]
+  }
+ ],
   "assets": {
   "directory": "./dist",
     "not_found_handling": "single-page-application"
