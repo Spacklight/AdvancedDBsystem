@@ -1,6 +1,8 @@
 import initSqlJs, { type Database } from 'sql.js';
 import wasmModule from './wasm/sql-wasm.wasm';
 
+console.log('SQLite WASM module:', wasmModule);
+
 let database: Database | null = null;
 
 export async function getDatabase(): Promise<Database> {
