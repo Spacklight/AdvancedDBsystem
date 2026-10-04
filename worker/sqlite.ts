@@ -1,4 +1,5 @@
 import initSqlJs, { type Database } from 'sql.js';
+import wasmModule from './wasm/sql-wasm.wasm';
 
 let database: Database | null = null;
 
@@ -8,7 +9,16 @@ export async function getDatabase(): Promise<Database> {
   }
 
   const SQL = await initSqlJs({
-    locateFile: () => '/worker/wasm/sql-wasm.wasm'
+    instantiateWasm(imports, receiveInstance) {
+      const instance = new WebAssembly.Instance(
+        wasmModule,
+        imports
+      );
+
+      receiveInstance(instance);
+
+      return instance.exports;
+    }
   });
 
   database = new SQL.Database();
