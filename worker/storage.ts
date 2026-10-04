@@ -161,6 +161,59 @@ export async function deleteFromHuggingFace(
   };
 }
 
+// Generic byte-level object access, used by the SQLite engine to persist a
+// project's whole database file under the same per-user prefix as uploaded
+// files, so it's covered by the existing quota/listing logic for free.
+export async function getObjectBytes(
+  env: Env,
+  key: string
+): Promise<Uint8Array | null> {
+  const s3 = client(env);
+
+  if (!s3 || !env.HF_S3_BUCKET) {
+    throw new Error('Hugging Face Storage Bucket is not configured.');
+  }
+
+  const response = await s3.fetch(bucketUrl(env, key));
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Hugging Face read failed: ${response.status} ${await response.text()}`
+    );
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export async function putObjectBytes(
+  env: Env,
+  key: string,
+  bytes: Uint8Array,
+  contentType = 'application/octet-stream'
+) {
+  const s3 = client(env);
+
+  if (!s3 || !env.HF_S3_BUCKET) {
+    throw new Error('Hugging Face Storage Bucket is not configured.');
+  }
+
+  const response = await s3.fetch(bucketUrl(env, key), {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType },
+    body: bytes
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Hugging Face write failed: ${response.status} ${await response.text()}`
+    );
+  }
+}
+
 function sanitize(name: string) {
   return name
     .replace(/[^a-zA-Z0-9._-]/g, '_')

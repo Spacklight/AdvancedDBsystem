@@ -16,9 +16,10 @@ export async function runSql(
     throw new Error('SQL query is too large.');
   }
 
-  // Real embedded SQLite WASM engine
+  // Real embedded SQLite WASM engine - one database per project, persisted
+  // to Hugging Face storage after every statement that can change it.
   if (project.engine === 'sqlite') {
-    const result = await executeSql(statement);
+    const result = await executeSql(env, project.user_id, project.id, statement);
 
     return {
       mode: 'sqlite',
