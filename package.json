@@ -15,11 +15,11 @@
     "@aws-sdk/client-s3": "^3.911.0",
     "@aws-sdk/s3-request-presigner": "^3.911.0",
     "aws4fetch": "^1.0.20",
+    "cloudflare-worker-sqlite-wasm": "^0.0.1-alpha.5",
     "mysql2": "^3.15.3",
     "pg": "^8.16.3",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "sql.js": "^1.14.2"
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.16.0",
@@ -28,7 +28,6 @@
     "@types/pg": "^8.15.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^5.0.4",
     "typescript": "^5.9.3",
     "vite": "^7.1.9",

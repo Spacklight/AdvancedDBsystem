@@ -1,7 +1,4 @@
-import initSqlJs, { type Database } from 'sql.js';
-import wasmModule from './wasm/sql-wasm.wasm';
-
-console.log('SQLite WASM module:', wasmModule);
+import initSqlJs, { type Database } from 'cloudflare-worker-sqlite-wasm';
 
 let database: Database | null = null;
 
@@ -10,18 +7,7 @@ export async function getDatabase(): Promise<Database> {
     return database;
   }
 
-  const SQL = await initSqlJs({
-    instantiateWasm(imports, receiveInstance) {
-      const instance = new WebAssembly.Instance(
-        wasmModule,
-        imports
-      );
-
-      receiveInstance(instance);
-
-      return instance.exports;
-    }
-  });
+  const SQL = await initSqlJs();
 
   database = new SQL.Database();
 
@@ -53,10 +39,10 @@ export async function executeSql(sql: string) {
 
   const result = results[0];
 
-  const rows = result.values.map((values) => {
+  const rows = result.values.map((values: unknown[]) => {
     const row: Record<string, unknown> = {};
 
-    result.columns.forEach((column, index) => {
+    result.columns.forEach((column: string, index: number) => {
       row[column] = values[index];
     });
 
