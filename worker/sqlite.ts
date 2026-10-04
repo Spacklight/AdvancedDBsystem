@@ -1,6 +1,26 @@
 import initSqlJs, { type Database } from 'cloudflare-worker-sqlite-wasm';
+import wasmModule from './wasm/sql-wasm.wasm';
 import type { Env } from './types';
 import { getObjectBytes, putObjectBytes } from './storage';
+
+// Plain sql.js tries to fetch its .wasm file over HTTP (or read it off disk)
+// the first time it's used - both fail in a Worker, which has neither. The
+// fix (per cloudflare-worker-sqlite-wasm's own docs) is to import the wasm
+// file as a module - Wrangler's bundler compiles it ahead of time - and hand
+// it to sql.js directly via instantiateWasm instead of letting it fetch.
+let sqlJsPromise: ReturnType<typeof initSqlJs> | null = null;
+function loadSqlJs() {
+  if (!sqlJsPromise) {
+    sqlJsPromise = initSqlJs({
+      instantiateWasm(imports: WebAssembly.Imports, successCallback: (instance: WebAssembly.Instance) => void) {
+        const instance = new WebAssembly.Instance(wasmModule, imports);
+        successCallback(instance);
+        return instance.exports;
+      }
+    });
+  }
+  return sqlJsPromise;
+}
 
 // Each project gets its own SQLite database, persisted as a single file in
 // the same Hugging Face bucket used for regular file storage (so it's
@@ -41,7 +61,7 @@ async function openDatabase(
     return cached;
   }
 
-  const SQL = await initSqlJs();
+  const SQL = await loadSqlJs();
   const existing = await getObjectBytes(env, storageKey(userId, projectId));
   const db = existing ? new SQL.Database(existing) : new SQL.Database();
 
